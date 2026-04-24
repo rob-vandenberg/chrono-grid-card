@@ -4,18 +4,15 @@ import { styleMap }              from 'https://unpkg.com/lit@2.0.0/directives/st
 import { unsafeHTML }            from 'https://unpkg.com/lit@2.0.0/directives/unsafe-html.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '0.0.5';
+const CARD_VERSION = '0.0.6';
 
 // ─── MDI icon paths ───────────────────────────────────────────────────────────
 const mdiDragHorizontalVariant = 'M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z';
 
 // ─── Version History ──────────────────────────────────────────────────────────
-// v0.0.5: Fix style rendering: replace all falsy checks (||, ?) with correct
-//         undefined/empty-string guards so 0 is treated as a valid value;
-//         introduce px/val/pad helpers in render() for consistent enforcement
-//         CgTextfield, CgSelect, CgButtonToggleGroup components; all helper
-//         functions; temporary JSON textarea for child card config testing;
-//         card render updated to apply wrapper/row/cell styles from config
+// v0.0.6: Phase 3 — replace temporary JSON textarea with native hui-card-picker
+//         and hui-card-element-editor; add lovelace property to editor;
+//         add _cardPicked and _cardConfigChanged handlers; add Change card button
 // v0.0.3: Use loadCardHelpers().createCardElement() for correct scoped
 //         registry child card creation
 // v0.0.2: Fix child card rendering: use hui-element .config property instead
@@ -462,8 +459,9 @@ customElements.define('chrono-cg-select', CgSelect);
 // ─── Editor ───────────────────────────────────────────────────────────────────
 class ChronoGridCardEditor extends LitElement {
   static properties = {
-    hass:    { attribute: false },
-    _config: { state: true },
+    hass:     { attribute: false },
+    lovelace: { attribute: false },
+    _config:  { state: true },
   };
 
   setConfig(config) {
@@ -536,21 +534,44 @@ class ChronoGridCardEditor extends LitElement {
     this._dispatchConfig();
   }
 
-  // ── Temporary: card JSON changed ───────────────────────────────────────────
-  _cardJsonChanged(ri, ci, e) {
+  // ── Card picked from hui-card-picker ──────────────────────────────────────
+  _cardPicked(ri, ci, e) {
+    e.stopPropagation();
     if (!this._config) return;
-    try {
-      const card = JSON.parse(e.target.value);
-      const rows = this._config.rows.map((r, i) => {
-        if (i !== ri) return r;
-        const cells = r.cells.map((c, j) => j === ci ? { ...c, card } : c);
-        return { ...r, cells };
-      });
-      this._config = { ...this._config, rows };
-      this._dispatchConfig();
-    } catch (err) {
-      // Invalid JSON — ignore silently
-    }
+    const card = e.detail.config;
+    const rows = this._config.rows.map((r, i) => {
+      if (i !== ri) return r;
+      const cells = r.cells.map((c, j) => j === ci ? { ...c, card } : c);
+      return { ...r, cells };
+    });
+    this._config = { ...this._config, rows };
+    this._dispatchConfig();
+  }
+
+  // ── Card config changed inside hui-card-element-editor ────────────────────
+  _cardConfigChanged(ri, ci, e) {
+    e.stopPropagation();
+    if (!this._config) return;
+    const card = e.detail.config;
+    const rows = this._config.rows.map((r, i) => {
+      if (i !== ri) return r;
+      const cells = r.cells.map((c, j) => j === ci ? { ...c, card } : c);
+      return { ...r, cells };
+    });
+    this._config = { ...this._config, rows };
+    this._dispatchConfig();
+  }
+
+  // ── Clear card config (back to picker) ────────────────────────────────────
+  _clearCard(ri, ci) {
+    if (!this._config) return;
+    const rows = this._config.rows.map((r, i) => {
+      if (i !== ri) return r;
+      const cells = r.cells.map((c, j) => j === ci ? { ...c, card: {} } : c);
+      return { ...r, cells };
+    });
+    this._config = { ...this._config, rows };
+    this._dispatchConfig();
   }
 
   // ── Row management ─────────────────────────────────────────────────────────
@@ -857,36 +878,40 @@ class ChronoGridCardEditor extends LitElement {
       margin-bottom: 4px;
     }
 
-    /* ── Temporary: card JSON textarea ─────────────────────────────────────── */
+    /* ── Card editor section ───────────────────────────────────────────────── */
 
-    .cell-card-json {
+    .cell-card-editor {
       margin-top: 8px;
-      margin-bottom: 8px;
     }
 
-    .cell-card-json label {
+    .cell-card-editor hui-card-element-editor {
       display: block;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--secondary-text-color);
+    }
+
+    .change-card-row {
+      display: flex;
+      justify-content: center;
+      margin-top: 4px;
       margin-bottom: 4px;
     }
 
-    .cell-card-json textarea {
-      /* TEMPORARY — replaced by native card picker in Phase 3 */
-      width: 100%;
-      box-sizing: border-box;
-      min-height: 80px;
-      padding: 8px;
-      background: var(--input-fill-color, rgba(0,0,0,0.06));
+    .change-card-btn {
+      background: none;
       border: none;
-      border-bottom: 1px solid var(--secondary-text-color, #888);
-      border-radius: 4px 4px 0 0;
-      color: var(--primary-text-color);
-      font-family: monospace;
-      font-size: 13px;
-      resize: vertical;
-      outline: none;
+      color: var(--primary-color);
+      font-size: 0.875rem;
+      font-weight: 500;
+      font-family: inherit;
+      letter-spacing: 0.0892857em;
+      text-transform: uppercase;
+      height: 36px;
+      padding: 0 8px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+
+    .change-card-btn:hover {
+      background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.08);
     }
 
   `;
@@ -991,13 +1016,25 @@ class ChronoGridCardEditor extends LitElement {
                         ${cgTextField('Padding\nright (px)',  cell.padding_right,  e => this._cellChanged(ri, ci, 'padding_right',  e), { type: 'number', step: '1', min: '0' })}
                       </div>
 
-                      <!-- Cell: temporary card JSON — REMOVED IN PHASE 3 -->
-                      <div class="cell-card-json">
-                        <label>Card config (temporary — JSON, replaced by card picker in Phase 3)</label>
-                        <textarea
-                          .value=${JSON.stringify(cell.card ?? {}, null, 2)}
-                          @change=${e => this._cardJsonChanged(ri, ci, e)}
-                        ></textarea>
+                      <!-- Cell: card picker or card editor -->
+                      <div class="cell-card-editor">
+                        ${cell.card && Object.keys(cell.card).length > 0 ? html`
+                          <hui-card-element-editor
+                            .hass=${this.hass}
+                            .value=${cell.card}
+                            .lovelace=${this.lovelace}
+                            @config-changed=${e => this._cardConfigChanged(ri, ci, e)}
+                          ></hui-card-element-editor>
+                          <div class="change-card-row">
+                            <button class="change-card-btn" @click=${() => this._clearCard(ri, ci)}>Change card type</button>
+                          </div>
+                        ` : html`
+                          <hui-card-picker
+                            .hass=${this.hass}
+                            .lovelace=${this.lovelace}
+                            @config-changed=${e => this._cardPicked(ri, ci, e)}
+                          ></hui-card-picker>
+                        `}
                       </div>
 
                       <!-- Remove cell button -->
