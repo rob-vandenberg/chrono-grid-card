@@ -1,9 +1,11 @@
 import { LitElement, html, css } from 'https://unpkg.com/lit@2.0.0/index.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '0.0.1';
+const CARD_VERSION = '0.0.2';
 
 // ─── Version History ──────────────────────────────────────────────────────────
+// v0.0.2: Fix child card rendering: use hui-element .config property instead
+//         of .setConfig() which is not available at createElement time
 // v0.0.1: Phase 1 skeleton — hardcoded stub config, hui-element grid rendering,
 //         hass propagation to child cards
 
@@ -96,11 +98,7 @@ class ChronoGridCard extends LitElement {
         const el = document.createElement('hui-element');
 
         if (cell.card && Object.keys(cell.card).length > 0) {
-          try {
-            el.setConfig(cell.card);
-          } catch (e) {
-            console.warn('chrono-grid-card: child card setConfig failed', e);
-          }
+          el.config = cell.card;
         }
 
         if (this._hass) {
