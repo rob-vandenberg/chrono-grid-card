@@ -4,15 +4,15 @@ import { styleMap }              from 'https://unpkg.com/lit@2.0.0/directives/st
 import { unsafeHTML }            from 'https://unpkg.com/lit@2.0.0/directives/unsafe-html.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '0.0.6';
+const CARD_VERSION = '0.0.7';
 
 // ─── MDI icon paths ───────────────────────────────────────────────────────────
 const mdiDragHorizontalVariant = 'M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z';
 
 // ─── Version History ──────────────────────────────────────────────────────────
-// v0.0.6: Phase 3 — replace temporary JSON textarea with native hui-card-picker
-//         and hui-card-element-editor; add lovelace property to editor;
-//         add _cardPicked and _cardConfigChanged handlers; add Change card button
+// v0.0.7: Fix card picker: use fireEvent show-dialog with saveCard callback
+//         for card picking; imperatively mount hui-card-element-editor in
+//         updated() to work around scoped custom element registry limitation
 // v0.0.3: Use loadCardHelpers().createCardElement() for correct scoped
 //         registry child card creation
 // v0.0.2: Fix child card rendering: use hui-element .config property instead
@@ -534,21 +534,38 @@ class ChronoGridCardEditor extends LitElement {
     this._dispatchConfig();
   }
 
-  // ── Card picked from hui-card-picker ──────────────────────────────────────
-  _cardPicked(ri, ci, e) {
-    e.stopPropagation();
-    if (!this._config) return;
-    const card = e.detail.config;
-    const rows = this._config.rows.map((r, i) => {
-      if (i !== ri) return r;
-      const cells = r.cells.map((c, j) => j === ci ? { ...c, card } : c);
-      return { ...r, cells };
-    });
-    this._config = { ...this._config, rows };
-    this._dispatchConfig();
+  // ── Card editor element cache (keyed by "ri-ci") ──────────────────────────
+  _cardEditorElements = new Map();
+
+  // ── Open HA card picker dialog with saveCard callback ─────────────────────
+  _pickCard(ri, ci) {
+    if (!this._config || !this.lovelace) return;
+    this.dispatchEvent(new CustomEvent('show-dialog', {
+      bubbles:  true,
+      composed: true,
+      detail: {
+        dialogTag:    'hui-dialog-create-card',
+        dialogImport: () => import('/frontend_latest/hui-dialog-create-card.js').catch(() => {}),
+        dialogParams: {
+          lovelaceConfig: this.lovelace,
+          saveConfig:     () => {},
+          path:           [0],
+          saveCard: (cardConfig) => {
+            const rows = this._config.rows.map((r, i) => {
+              if (i !== ri) return r;
+              const cells = r.cells.map((c, j) => j === ci ? { ...c, card: cardConfig } : c);
+              return { ...r, cells };
+            });
+            this._config = { ...this._config, rows };
+            this._cardEditorElements.delete(`${ri}-${ci}`);
+            this._dispatchConfig();
+          },
+        },
+      },
+    }));
   }
 
-  // ── Card config changed inside hui-card-element-editor ────────────────────
+  // ── Card config changed inside imperatively mounted hui-card-element-editor ─
   _cardConfigChanged(ri, ci, e) {
     e.stopPropagation();
     if (!this._config) return;
@@ -562,9 +579,10 @@ class ChronoGridCardEditor extends LitElement {
     this._dispatchConfig();
   }
 
-  // ── Clear card config (back to picker) ────────────────────────────────────
+  // ── Clear card config (back to pick card button) ───────────────────────────
   _clearCard(ri, ci) {
     if (!this._config) return;
+    this._cardEditorElements.delete(`${ri}-${ci}`);
     const rows = this._config.rows.map((r, i) => {
       if (i !== ri) return r;
       const cells = r.cells.map((c, j) => j === ci ? { ...c, card: {} } : c);
@@ -572,6 +590,35 @@ class ChronoGridCardEditor extends LitElement {
     });
     this._config = { ...this._config, rows };
     this._dispatchConfig();
+  }
+
+  // ── updated: imperatively mount hui-card-element-editor into each cell ─────
+  updated() {
+    const rows = this._config?.rows ?? [];
+    rows.forEach((row, ri) => {
+      (row.cells ?? []).forEach((cell, ci) => {
+        if (!cell.card || Object.keys(cell.card).length === 0) return;
+        const key       = `${ri}-${ci}`;
+        const container = this.shadowRoot.querySelector(`.card-editor-mount[data-row="${ri}"][data-cell="${ci}"]`);
+        if (!container) return;
+
+        let el = this._cardEditorElements.get(key);
+        if (!el) {
+          el = document.createElement('hui-card-element-editor');
+          el.addEventListener('config-changed', e => this._cardConfigChanged(ri, ci, e));
+          this._cardEditorElements.set(key, el);
+        }
+
+        el.hass     = this.hass;
+        el.lovelace = this.lovelace;
+        el.value    = cell.card;
+
+        if (!container.contains(el)) {
+          container.innerHTML = '';
+          container.appendChild(el);
+        }
+      });
+    });
   }
 
   // ── Row management ─────────────────────────────────────────────────────────
@@ -888,6 +935,13 @@ class ChronoGridCardEditor extends LitElement {
       display: block;
     }
 
+    .pick-card-row {
+      display: flex;
+      justify-content: center;
+      margin-top: 8px;
+      margin-bottom: 4px;
+    }
+
     .change-card-row {
       display: flex;
       justify-content: center;
@@ -1019,21 +1073,18 @@ class ChronoGridCardEditor extends LitElement {
                       <!-- Cell: card picker or card editor -->
                       <div class="cell-card-editor">
                         ${cell.card && Object.keys(cell.card).length > 0 ? html`
-                          <hui-card-element-editor
-                            .hass=${this.hass}
-                            .value=${cell.card}
-                            .lovelace=${this.lovelace}
-                            @config-changed=${e => this._cardConfigChanged(ri, ci, e)}
-                          ></hui-card-element-editor>
+                          <div
+                            class="card-editor-mount"
+                            data-row=${ri}
+                            data-cell=${ci}
+                          ></div>
                           <div class="change-card-row">
                             <button class="change-card-btn" @click=${() => this._clearCard(ri, ci)}>Change card type</button>
                           </div>
                         ` : html`
-                          <hui-card-picker
-                            .hass=${this.hass}
-                            .lovelace=${this.lovelace}
-                            @config-changed=${e => this._cardPicked(ri, ci, e)}
-                          ></hui-card-picker>
+                          <div class="pick-card-row">
+                            <button class="add-btn" @click=${() => this._pickCard(ri, ci)}>+ Pick card</button>
+                          </div>
                         `}
                       </div>
 
