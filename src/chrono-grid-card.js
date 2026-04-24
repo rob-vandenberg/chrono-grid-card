@@ -4,13 +4,15 @@ import { styleMap }              from 'https://unpkg.com/lit@2.0.0/directives/st
 import { unsafeHTML }            from 'https://unpkg.com/lit@2.0.0/directives/unsafe-html.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '0.0.4';
+const CARD_VERSION = '0.0.5';
 
 // ─── MDI icon paths ───────────────────────────────────────────────────────────
 const mdiDragHorizontalVariant = 'M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z';
 
 // ─── Version History ──────────────────────────────────────────────────────────
-// v0.0.4: Phase 2 — full editor with Appearance, Rows and Cells sections;
+// v0.0.5: Fix style rendering: replace all falsy checks (||, ?) with correct
+//         undefined/empty-string guards so 0 is treated as a valid value;
+//         introduce px/val/pad helpers in render() for consistent enforcement
 //         CgTextfield, CgSelect, CgButtonToggleGroup components; all helper
 //         functions; temporary JSON textarea for child card config testing;
 //         card render updated to apply wrapper/row/cell styles from config
@@ -1185,14 +1187,26 @@ class ChronoGridCard extends LitElement {
     const c    = this._config;
     const rows = c.rows ?? [];
 
+    // ── Style helpers: only render a property when the value is not empty ──
+    // Any real value (including 0) is valid. Only undefined or '' means omit.
+    const px  = (v) => (v !== undefined && v !== '') ? `${v}px` : undefined;
+    const val = (v) => (v !== undefined && v !== '') ? v         : undefined;
+    const pad = (t, r, b, l) =>
+      (t !== undefined && t !== '' &&
+       r !== undefined && r !== '' &&
+       b !== undefined && b !== '' &&
+       l !== undefined && l !== '')
+        ? `${t}px ${r}px ${b}px ${l}px`
+        : undefined;
+
     const wrapperStyles = {
-      'background-color': c.background_color || undefined,
-      'border-width':     c.border_width !== undefined ? `${c.border_width}px` : undefined,
-      'border-style':     c.border_style  || undefined,
-      'border-color':     c.border_color  || undefined,
-      'border-radius':    c.border_radius !== undefined ? `${c.border_radius}px` : undefined,
-      'padding':          `${c.padding_top ?? 8}px ${c.padding_right ?? 8}px ${c.padding_bottom ?? 8}px ${c.padding_left ?? 8}px`,
-      'box-shadow':       c.box_shadow    || undefined,
+      'background-color': val(c.background_color),
+      'border-width':     px(c.border_width),
+      'border-style':     val(c.border_style),
+      'border-color':     val(c.border_color),
+      'border-radius':    px(c.border_radius),
+      'padding':          pad(c.padding_top, c.padding_right, c.padding_bottom, c.padding_left),
+      'box-shadow':       val(c.box_shadow),
     };
 
     return html`
@@ -1202,29 +1216,25 @@ class ChronoGridCard extends LitElement {
 
           const rowStyles = {
             'grid-template-columns': columns || '1fr',
-            'gap':                   `${row.gap ?? 8}px`,
-            'background-color':      row.background_color || undefined,
-            'border-width':          row.border_width ? `${row.border_width}px` : undefined,
-            'border-style':          row.border_style  || undefined,
-            'border-color':          row.border_color  || undefined,
-            'border-radius':         row.border_radius ? `${row.border_radius}px` : undefined,
-            'padding':               (row.padding_top || row.padding_bottom || row.padding_left || row.padding_right)
-                                       ? `${row.padding_top ?? 0}px ${row.padding_right ?? 0}px ${row.padding_bottom ?? 0}px ${row.padding_left ?? 0}px`
-                                       : undefined,
+            'gap':                   px(row.gap),
+            'background-color':      val(row.background_color),
+            'border-width':          px(row.border_width),
+            'border-style':          val(row.border_style),
+            'border-color':          val(row.border_color),
+            'border-radius':         px(row.border_radius),
+            'padding':               pad(row.padding_top, row.padding_right, row.padding_bottom, row.padding_left),
           };
 
           return html`
             <div class="grid-row" style=${styleMap(rowStyles)}>
               ${(row.cells ?? []).map((cell, ci) => {
                 const cellStyles = {
-                  'background-color': cell.background_color || undefined,
-                  'border-width':     cell.border_width ? `${cell.border_width}px` : undefined,
-                  'border-style':     cell.border_style  || undefined,
-                  'border-color':     cell.border_color  || undefined,
-                  'border-radius':    cell.border_radius ? `${cell.border_radius}px` : undefined,
-                  'padding':          (cell.padding_top || cell.padding_bottom || cell.padding_left || cell.padding_right)
-                                        ? `${cell.padding_top ?? 0}px ${cell.padding_right ?? 0}px ${cell.padding_bottom ?? 0}px ${cell.padding_left ?? 0}px`
-                                        : undefined,
+                  'background-color': val(cell.background_color),
+                  'border-width':     px(cell.border_width),
+                  'border-style':     val(cell.border_style),
+                  'border-color':     val(cell.border_color),
+                  'border-radius':    px(cell.border_radius),
+                  'padding':          pad(cell.padding_top, cell.padding_right, cell.padding_bottom, cell.padding_left),
                 };
 
                 return html`
