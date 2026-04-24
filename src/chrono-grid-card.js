@@ -1,9 +1,12 @@
 import { LitElement, html, css } from 'https://unpkg.com/lit@2.0.0/index.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '0.0.2';
+const CARD_VERSION = '0.0.3';
 
 // ─── Version History ──────────────────────────────────────────────────────────
+// v0.0.3: Replace document.createElement('hui-element') with
+//         window.loadCardHelpers().createCardElement() so child cards are
+//         created within HA's scoped custom element registry
 // v0.0.2: Fix child card rendering: use hui-element .config property instead
 //         of .setConfig() which is not available at createElement time
 // v0.0.1: Phase 1 skeleton — hardcoded stub config, hui-element grid rendering,
@@ -66,10 +69,23 @@ class ChronoGridCard extends LitElement {
     super();
     this._config       = null;
     this._hass         = null;
+    this._helpers      = null;
     this._cardElements = [];
   }
 
-  // ── hass setter: store and propagate to all child hui-elements ────────────
+  // ── connectedCallback: load HA card helpers, then build child elements ────
+  async connectedCallback() {
+    super.connectedCallback();
+    if (!this._helpers) {
+      this._helpers = await window.loadCardHelpers();
+    }
+    if (this._config) {
+      this._rebuildCardElements();
+      this.requestUpdate();
+    }
+  }
+
+  // ── hass setter: store and propagate to all child card elements ───────────
   set hass(hass) {
     this._hass = hass;
     this._cardElements.forEach(el => {
@@ -81,31 +97,32 @@ class ChronoGridCard extends LitElement {
     return this._hass;
   }
 
-  // ── setConfig: store config and rebuild child element cache ───────────────
+  // ── setConfig: store config and rebuild if helpers are ready ─────────────
   setConfig(config) {
     this._config = config;
-    this._rebuildCardElements();
-    this.requestUpdate();
+    if (this._helpers) {
+      this._rebuildCardElements();
+      this.requestUpdate();
+    }
   }
 
-  // ── _rebuildCardElements: create one hui-element per cell ─────────────────
+  // ── _rebuildCardElements: create one card element per cell ───────────────
   _rebuildCardElements() {
+    if (!this._helpers) return;
     const rows = (this._config ?? STUB_CONFIG).rows ?? [];
     this._cardElements = [];
 
     rows.forEach(row => {
       (row.cells ?? []).forEach(cell => {
-        const el = document.createElement('hui-element');
-
         if (cell.card && Object.keys(cell.card).length > 0) {
-          el.config = cell.card;
+          const el = this._helpers.createCardElement(cell.card);
+          if (this._hass) {
+            el.hass = this._hass;
+          }
+          this._cardElements.push(el);
+        } else {
+          this._cardElements.push(null);
         }
-
-        if (this._hass) {
-          el.hass = this._hass;
-        }
-
-        this._cardElements.push(el);
       });
     });
   }
