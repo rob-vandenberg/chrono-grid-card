@@ -4,14 +4,14 @@ import { styleMap }              from 'https://unpkg.com/lit@2.0.0/directives/st
 import { unsafeHTML }            from 'https://unpkg.com/lit@2.0.0/directives/unsafe-html.js?module';
 
 // ─── Version ──────────────────────────────────────────────────────────────────
-const CARD_VERSION = '0.0.8';
+const CARD_VERSION = '0.0.9';
 
 // ─── MDI icon paths ───────────────────────────────────────────────────────────
 const mdiDragHorizontalVariant = 'M9,3H11V5H9V3M13,3H15V5H13V3M9,7H11V9H9V7M13,7H15V9H13V7M9,11H11V13H9V11M13,11H15V13H13V11M9,15H11V17H9V15M13,15H15V17H13V15M9,19H11V21H9V19M13,19H15V21H13V19Z';
 
 // ─── Version History ──────────────────────────────────────────────────────────
-// v0.0.8: Remove dialogImport from show-dialog event — hui-dialog-create-card
-//         is already registered by HA at editor load time
+// v0.0.9: Diagnostics: fire show-dialog on window instead of this; remove
+//         lovelace guard; add console.log to trace _pickCard execution
 // v0.0.3: Use loadCardHelpers().createCardElement() for correct scoped
 //         registry child card creation
 // v0.0.2: Fix child card rendering: use hui-element .config property instead
@@ -538,17 +538,20 @@ class ChronoGridCardEditor extends LitElement {
 
   // ── Open HA card picker dialog with saveCard callback ─────────────────────
   _pickCard(ri, ci) {
-    if (!this._config || !this.lovelace) return;
-    this.dispatchEvent(new CustomEvent('show-dialog', {
+    if (!this._config) return;
+    console.log('chrono-grid-card: _pickCard called', ri, ci, 'lovelace:', this.lovelace);
+    const lovelace = this.lovelace ?? { config: { views: [] } };
+    window.dispatchEvent(new CustomEvent('show-dialog', {
       bubbles:  true,
       composed: true,
       detail: {
         dialogTag:    'hui-dialog-create-card',
         dialogParams: {
-          lovelaceConfig: this.lovelace,
+          lovelaceConfig: lovelace,
           saveConfig:     () => {},
           path:           [0],
           saveCard: (cardConfig) => {
+            console.log('chrono-grid-card: card picked', cardConfig);
             const rows = this._config.rows.map((r, i) => {
               if (i !== ri) return r;
               const cells = r.cells.map((c, j) => j === ci ? { ...c, card: cardConfig } : c);
