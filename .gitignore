@@ -13,3 +13,18 @@ github/
 *.ai
 *.psd
 *.bat
+
+# Never push these (cleanup 2026-09-29)
+*.zip
+*.log
+__pycache__/
+*.pyc
+
+# Removed from repo in cleanup 2026-09-29 (unused artwork, old files)
+/art/chrono-grid-card.svg
+/art/compass.svg
+/art/editor.png
+/art/gauge.svg
+/art/markdown.svg
+/art/under-construction.png
+/art/wrapper.svg
